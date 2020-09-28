@@ -45,7 +45,7 @@ int RType(string* args, int f7, int f3, int op) {
     ret += (argToReg(args[1]) & 0x1f) << 15; // rs1
     ret += (f3 & 0x7) << 12; // funct3
     ret += (argToReg(args[0]) & 0x1f) << 7; // rd
-    ret += (op & 0x3f); // opcode
+    ret += (op & 0x7f); // opcode
 
     return ret;
 }
@@ -58,7 +58,7 @@ int IType(string* args, int f3, int op) { // UNTESTED
     ret += (argToReg(args[1]) & 0x1f) << 15; // rs1
     ret += (f3 & 0x7) << 12; // funct3
     ret += (argToReg(args[0]) & 0x1f) << 7; // rd
-    ret += (op & 0x3f); // opcode
+    ret += (op & 0x7f); // opcode
 
     return ret;
 }
@@ -73,7 +73,7 @@ int SType(string* args, int f3, int op) { // UNTESTED
     ret += (argToReg(args[0]) & 0x1f) << 15; // rs1
     ret += (f3 & 0x7) << 12; // funct3
     ret += (imm & 0x1f) << 7; // imm[4:0]
-    ret += (op & 0x3f); // opcode
+    ret += (op & 0x7f); // opcode
 
     return ret;
 }
@@ -83,14 +83,14 @@ int BType(string* args, int f3, int op) { // UNTESTED
     int ret = 0;
     int imm = argToImm(args[2]);
 
-    ret += (imm & 0x1000) << 31; // imm 12
-    ret += (imm & 0x7e0) << 25; // imm 10:5
+    ret += ((imm >> 12) & 0x1) << 31; // imm 12
+    ret += ((imm >> 5) & 0x3f) << 25; // imm 10:5
     ret += (argToReg(args[1]) & 0x1f) << 20; // rs2
     ret += (argToReg(args[0]) & 0x1f) << 15; // rs1
     ret += (f3 & 0x7) << 12; // funct3
-    ret += (imm & 0x1e) << 8; // imm 4:1
-    ret += (imm & 0x8000) << 7; // imm 11
-    ret += (op & 0x3f); // opcode
+    ret += ((imm >> 1) & 0xf) << 8; // imm 4:1
+    ret += ((imm >> 11) & 0x1) << 7; // imm 11
+    ret += (op & 0x7f); // opcode
 
     return ret;
 }
@@ -99,9 +99,9 @@ int UType(string* args, int op) { // UNTESTED
     // Arugment order: rd, imm
     int ret = 0;
 
-    ret += (argToImm(args[1]) & 0xfffff000) << 12; // imm 31:12
+    ret += ((argToImm(args[1]) >> 12) & 0xfffff000) << 12; // imm 31:12
     ret += (argToReg(args[0]) & 0x1f) << 7; // rd
-    ret += (op & 0x3f); // opcode
+    ret += (op & 0x7f); // opcode
 
     return ret;
 }
@@ -111,14 +111,46 @@ int JType(string* args, int op) { // UNTESTED
     int ret = 0;
     int imm = argToImm(args[1]);
 
-    ret += (imm & 0x100000) << 31; // imm 20
-    ret += (imm & 0x7fe) <<  21; // imm 10:1
-    ret += (imm & 0x800) << 20; // imm 11
-    ret += (imm & 0xff000) << 12; // imm 19:12
+    ret += ((imm >> 20) & 0x1) << 31; // imm 20
+    ret += ((imm >> 1) & 0x3ff) <<  21; // imm 10:1
+    ret += ((imm >> 11) & 0x1) << 20; // imm 11
+    ret += ((imm >> 12) & 0xff) << 12; // imm 19:12
     ret += (argToReg(args[0]) & 0x1f) << 7; // rd
-    ret += (op & 0x3f); // opcode
+    ret += (op & 0x7f); // opcode
 
     return ret;
+
+}
+
+bool TypeTesting() {
+    string* t = new string[3];
+
+
+    // RType:
+    t[0] = "x0"; t[1] = "x0"; t[2] = "x0";
+    if(RType(t, 0, 0x7, 0) != (0x7 << 12)) cout << "\tRType funct3 error.\n";
+
+    t[0] = "x0"; t[1] = "x0"; t[2] = "x0";
+    if(RType(t, 0, 0, 0x7f) != 0x7f) cout << "\tRType opcode error.\n";
+
+
+    // IType:
+    t[0] = "x0"; t[1] = "x0"; t[2] = "0";
+    if(IType(t, 0, 0x7f) != 0x7f) cout << "\tIType opcode error.\n";
+
+    t[0] = "x0"; t[1] = "x0"; t[2] = "-1";
+    if(IType(t, 0, 0) != (0xfff << 20)) cout << "\tIType imm error.\n";
+
+
+    // SType:
+    t[0] = "x0"; t[1] = "x0"; t[2] = "0";
+    if(SType(t, 0, 0x7f) != 0x7f) cout << "\tSType opcode error.\n";
+
+    t[0] = "x0"; t[1] = "x0"; t[2] = "-1";
+    if(SType(t, 0, 0) != (0xfe000f80)) cout << "\tSType imm error.\n";
+
+    //cout << hex << setfill('0') << setw(8) << RType(t, 0, 0, 0x3f);
+    delete [] t;
 
 }
 
@@ -274,7 +306,7 @@ int main()
     // Write everything to the output file.
     for(int i = 0; i < memSize; i++) {
         out << hex << setfill('0') << setw(instructionLength / 4) << memory[i] << endl;
-    } cout << "Finished writing the program file.\n";
+    } cout << "Finished writing to the program file.\n";
 
     // Close all of the files.
     prog.close();
@@ -284,14 +316,7 @@ int main()
     delete [] memory;
     memory = nullptr;
 
-    // Testing
-    string* test = new string[3];
-    test[0] = "x0"; // rd
-    test[1] = "x0"; // rs1
-    test[2] = "x0"; // rs2
-
-    cout << hex << setfill('0') << setw(8) << RType(test, 0, 0, 0x3f);
-    delete [] test;
+    TypeTesting();
 
     return 0;
 }
