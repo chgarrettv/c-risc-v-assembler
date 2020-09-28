@@ -37,6 +37,7 @@ int argToImm(string arg) {
 }
 
 int RType(string* args, int f7, int f3, int op) {
+    // Argument order: rd, rs1, rs2
     int ret = 0;
 
     ret += (f7 & 0x7f) << 25; // funct7
@@ -50,6 +51,7 @@ int RType(string* args, int f7, int f3, int op) {
 }
 
 int IType(string* args, int f3, int op) { // UNTESTED
+    // Argument order: rd, rs1, imm
     int ret = 0;
 
     ret += (argToImm(args[2]) & 0xfff) << 20;
@@ -62,6 +64,7 @@ int IType(string* args, int f3, int op) { // UNTESTED
 }
 
 int SType(string* args, int f3, int op) { // UNTESTED
+    // Argument order: rs1, rs2, imm
     int ret = 0;
     int imm = argToImm(args[2]);
 
@@ -75,15 +78,47 @@ int SType(string* args, int f3, int op) { // UNTESTED
     return ret;
 }
 
-int BType() {
+int BType(string* args, int f3, int op) { // UNTESTED
+    // Argument order: rs1, rs2, imm
+    int ret = 0;
+    int imm = argToImm(args[2]);
 
+    ret += (imm & 0x1000) << 31; // imm 12
+    ret += (imm & 0x7e0) << 25; // imm 10:5
+    ret += (argToReg(args[1]) & 0x1f) << 20; // rs2
+    ret += (argToReg(args[0]) & 0x1f) << 15; // rs1
+    ret += (f3 & 0x7) << 12; // funct3
+    ret += (imm & 0x1e) << 8; // imm 4:1
+    ret += (imm & 0x8000) << 7; // imm 11
+    ret += (op & 0x3f); // opcode
+
+    return ret;
 }
 
-int UType() {
+int UType(string* args, int op) { // UNTESTED
+    // Arugment order: rd, imm
+    int ret = 0;
 
+    ret += (argToImm(args[1]) & 0xfffff000) << 12; // imm 31:12
+    ret += (argToReg(args[0]) & 0x1f) << 7; // rd
+    ret += (op & 0x3f); // opcode
+
+    return ret;
 }
 
-int JType() {
+int JType(string* args, int op) { // UNTESTED
+    // Arugment order: rd, imm
+    int ret = 0;
+    int imm = argToImm(args[1]);
+
+    ret += (imm & 0x100000) << 31; // imm 20
+    ret += (imm & 0x7fe) <<  21; // imm 10:1
+    ret += (imm & 0x800) << 20; // imm 11
+    ret += (imm & 0xff000) << 12; // imm 19:12
+    ret += (argToReg(args[0]) & 0x1f) << 7; // rd
+    ret += (op & 0x3f); // opcode
+
+    return ret;
 
 }
 
