@@ -1,3 +1,4 @@
 add t0, t1, t2
-slti t3, t2, 0
-slt     t4,   t0,      t1 # Comment
+slti t3, t2, 0xffffffff #comment
+slt     t4,   t0,      t1#comment
+lw t0, 0x43(t1)

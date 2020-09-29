@@ -35,29 +35,12 @@ int argToReg(string arg){ // Should return a value between 0-31.
 }
 
 int argToImm(string arg) {
-    return stoi(arg);
-}
+    int imm = 0;
+    if(arg.find("0x") != -1) imm = (int)stoul(arg, nullptr, 16);
+    else imm = (int)stoul(arg);
 
-string* addressExpander(string* args) { // For instructions like lw that have a #(reg) in the assembly instruction format. This expands them into reg and immediate arguments.
-    string* ret; ret = new string[args.length() + 1];
-
-    for(int i = 0; i < args.length(); i++) {
-        if(args[i].find("(") != -1 && args.find(")") != -1) {
-            // Initialize the return array.
-            for(int i = 0; i < args.length() - 1; i++) {
-                ret[i] = args[i];
-            }
-
-            string lastArg = args[args.length() - 1];
-            ret[args.length() - 1] = lastArg.substr(lastArg.find("("), lastArg.find(")") - lastArg.find("(")); // rs1
-            ret[args.length()] = lastArg.substr(0, lastArg.find("(")); // imm
-            return ret;
-        }
-        if((args[i].find("(") == -1 && args.find(")") != -1) || (args[i].find("(") != -1 && args.find(")") == -1)) {
-            cout << "Incomplete parenthesis: " << args[i];
-        }
-    }
-    return args;
+    cout << "\t\tImm " << arg << ": " << hex << setfill('0') << setw(8) << imm << endl;
+    return imm;
 }
 
 int RType(string* args, int f7, int f3, int op) {
@@ -173,6 +156,10 @@ bool TypeTesting() {
     t[0] = "x0"; t[1] = "x0"; t[2] = "-1";
     if(SType(t, 0, 0) != (0xfe000f80)) cout << "\tSType imm error.\n";
 
+
+    // Function Tests:
+
+
     //cout << hex << setfill('0') << setw(8) << RType(t, 0, 0, 0x3f);
     delete [] t;
 
@@ -200,7 +187,7 @@ int main()
 
     // Start reading in the input file.
     int lineNumber = 0;
-    int hardwareInst = 0;
+    uint32_t hardwareInst = 0;
 
     string inst = "";
     string operation = "";
@@ -229,8 +216,19 @@ int main()
         }
 
         // Last piece has to be an argument.
-        if(inst.find(" ") != -1) arg[numArgs] = inst.substr(inst.find_last_of(" ") + 1, inst.length());
+        if(inst.find(" ") != -1) arg[numArgs] = inst.substr(inst.find_first_not_of(" "), inst.find_last_not_of(" ") - inst.find_first_not_of(" ") + 1);
         else arg[numArgs] = inst;
+
+        if(arg[numArgs].find("(") != -1 && arg[numArgs].find(")") != -1) {
+            string s = arg[numArgs];
+
+            arg[numArgs] = s.substr(s.find("(") + 1, s.find(")") - s.find("(") - 1); // rs1
+            arg[numArgs + 1] = s.substr(0, s.find("(")); // imm
+
+            numArgs++;
+        } else if((arg[numArgs].find("(") == -1 && arg[numArgs].find(")") != -1) || (arg[numArgs].find("(") != -1 && arg[numArgs].find(")") == -1)) {
+            cout << "Missing a parenthesis: " << arg[numArgs];
+        }
 
         numArgs++;
 
@@ -244,61 +242,67 @@ int main()
         }
 
 
+
+
         // RV 32I Instructions:
                if(operation == "lui") {
-            hardwareInst = UType();
+            hardwareInst = UType(arg, 0x37);
         } else if(operation == "auipc") {
-            hardwareInst = UType();
+            hardwareInst = UType(arg, 0x17);
         } else if(operation == "jal") {
-            hardwareInst = JType();
+            hardwareInst = JType(arg, 0x6f);
         } else if(operation == "jalr") {
-            hardwareInst = IType();
+            hardwareInst = IType(arg, 0x0, 0x67);
         } else if(operation == "beq") {
-            hardwareInst = BType();
+            hardwareInst = BType(arg, 0x0, 0x63);
         } else if(operation == "bne") {
-            hardwareInst = BType();
+            hardwareInst = BType(arg, 0x1, 0x63);
         } else if(operation == "blt") {
-            hardwareInst = BType();
+            hardwareInst = BType(arg, 0x4, 0x63);
         } else if(operation == "bge") {
-            hardwareInst = BType();
+            hardwareInst = BType(arg, 0x5, 0x63);
         } else if(operation == "bltu") {
-            hardwareInst = BType();
+            hardwareInst = BType(arg, 0x6, 0x63);
         } else if(operation == "bgeu") {
-            hardwareInst = BType();
+            hardwareInst = BType(arg, 0x7, 0x63);
         } else if(operation == "lb") {
-            hardwareInst = IType();
+            hardwareInst = IType(arg, 0x0, 0x03);
         } else if(operation == "lh") {
-            hardwareInst = IType();
-        } else if(operation == "lw") { // Think this is for all load and store: format is lw rd, #(rs1) where # is an added offset to rs1. Offset = imm.
-            hardwareInst = IType();
+            hardwareInst = IType(arg, 0x1, 0x03);
+        } else if(operation == "lw") { // Think this is for all load and store: format is lw rd, 0x#(rs1) where 0x# is an added offset to rs1. Offset = imm.
+            hardwareInst = IType(arg, 0x2, 0x03);
         } else if(operation == "lbu") {
-            hardwareInst = IType();
+            hardwareInst = IType(arg, 0x4, 0x03);
         } else if(operation == "lhu") {
-            hardwareInst = IType();
+            hardwareInst = IType(arg, 0x5, 0x03);
         } else if(operation == "sb") {
-            hardwareInst = SType();
+            hardwareInst = SType(arg, 0x0, 0x23);
         } else if(operation == "sh") {
-            hardwareInst = SType();
+            hardwareInst = SType(arg, 0x1, 0x23);
         } else if(operation == "sw") {
-            hardwareInst = SType();
+            hardwareInst = SType(arg, 0x2, 0x23);
         } else if(operation == "addi") {
-            hardwareInst = IType();
+            hardwareInst = IType(arg, 0x0, 0x13);
         } else if(operation == "slti") {
-            hardwareInst = IType();
+            hardwareInst = IType(arg, 0x3, 0x13);
         } else if(operation == "sltiu") {
-            hardwareInst = IType();
+            hardwareInst = IType(arg, 0x3, 0x13);
         } else if(operation == "xori") {
-            hardwareInst = IType();
+            hardwareInst = IType(arg, 0x4, 0x13);
         } else if(operation == "ori") {
-            hardwareInst = IType();
+            hardwareInst = IType(arg, 0x6, 0x13);
         } else if(operation == "andi") {
-            hardwareInst = IType();
+            hardwareInst = IType(arg, 0x7, 0x13);
         } else if(operation == "slli") { // NEED A SPECIAL IMM FOR SHAMT
-            hardwareInst = IType();
+            hardwareInst = IType(arg, 0x1, 0x13);
+            hardwareInst = (hardwareInst << 7) >> 7;
         } else if(operation == "srli") { // NEED A SPECIAL IMM FOR SHAMT
-            hardwareInst = IType();
+            hardwareInst = IType(arg, 0x5, 0x13);
+            hardwareInst = (hardwareInst << 7) >> 7;
         } else if(operation == "srai") { // NEED A SPECIAL IMM FOR SHAMT
-            hardwareInst = IType();
+            hardwareInst = IType(arg, 0x5, 0x13);
+            hardwareInst = (hardwareInst << 7) >> 7;
+            hardwareInst += 0x40000000;
         } else if(operation == "add") {
             hardwareInst = RType(arg, 0x0, 0x0, 0x33);
         } else if(operation == "sub") {
@@ -320,20 +324,20 @@ int main()
         } else if(operation == "and") {
             hardwareInst = RType(arg, 0x0, 0x7, 0x33);
         } else if(operation == "fence") {
-            hardwareInst = IType();
+            //hardwareInst = IType();
         } else if(operation == "ecall") { // Hard coded instruction.
             hardwareInst = 0x00000073;
         } else if(operation == "ebreak") { // Hard coded instruction.
             hardwareInst = 0x00100073;
         }
 
-        cout << hex << setfill('0') << setw(8) << hardwareInst;
+        cout << "\n\tHardware Instruction: " << hex << setfill('0') << setw(8) << hardwareInst;
 
         // Prepare for next cycle.
         lineNumber++;
         hardwareInst = 0;
 
-        cout << endl;
+        cout << "\n\n";
     }
 
 
