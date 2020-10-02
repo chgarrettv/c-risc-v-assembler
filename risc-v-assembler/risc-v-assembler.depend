@@ -1,6 +1,32 @@
 # depslib dependency file v1.0
-1601057976 source:f:\google drive\personal stuff\programming\code blocks\risc-v assembler\risc-v-assembler\main.cpp
+1601675132 source:f:\google drive\personal stuff\programming\code blocks\risc-v assembler\risc-v-assembler\main.cpp
 	<iostream>
 	<fstream>
 	<iomanip>
+	<map>
+	<vector>
+	<Translator.h>
+	<LocalSymbol.h>
+
+1601585967 f:\google drive\personal stuff\programming\code blocks\risc-v assembler\risc-v-assembler\include\translator.h
+	<string>
+
+1601675215 source:f:\google drive\personal stuff\programming\code blocks\risc-v assembler\risc-v-assembler\src\translator.cpp
+	"Translator.h"
+	<iostream>
+	<fstream>
+	<iomanip>
+	<map>
+	<string>
+
+1601584758 f:\google drive\personal stuff\programming\code blocks\risc-v assembler\risc-v-assembler\include\symboltable.h
+	<string>
+	<map>
+	<vector>
+
+1601674426 source:f:\google drive\personal stuff\programming\code blocks\risc-v assembler\risc-v-assembler\src\localsymbol.cpp
+	"LocalSymbol.h"
+
+1601674415 f:\google drive\personal stuff\programming\code blocks\risc-v assembler\risc-v-assembler\include\localsymbol.h
+	<string>
 

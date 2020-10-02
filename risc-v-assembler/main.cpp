@@ -9,352 +9,305 @@ This program was designed as a basic assembler for RV32I.
 #include <fstream>
 #include <iomanip>
 
+#include <map>
+#include <vector>
+
+#include <Translator.h>
+#include <LocalSymbol.h>
+
 using namespace std;
 
-int argToReg(string arg){ // Should return a value between 0-31.
-    if(arg == "zero") return 0;
-    if(arg == "ra") return 1;
-    if(arg == "sp") return 2;
-    if(arg == "gp") return 3;
-    if(arg == "tp") return 4;
-    if(arg[0] == 't') {
-        int t = stoi(arg.substr(1, arg.length()));
-        if(t < 3) return t + 5;
-        else return t + 25;
-    }
-    if(arg[0] == 's') {
-        int s = stoi(arg.substr(1, arg.length()));
-        if(s < 2) return s + 8;
-        else return s + 16;
-    }
-    if(arg == "fp") return 8;
-    if(arg[0] == 'a') return stoi(arg.substr(1, arg.length())) + 10;
-    if(arg[0] == 'x') return stoi(arg.substr(1, arg.length()));
+string labelType(string operand) {
+    if(operand[0] == '.') return "local";
+    if(operand.find_first_not_of("0123456789") == -1) return "local";
 
-    else return -1;
+    return "global";
 }
 
-int argToImm(string arg) {
-    int imm = 0;
-    if(arg.find("0x") != -1) imm = (int)stoul(arg, nullptr, 16);
-    else imm = (int)stoul(arg);
+string immType(string operand) {
+    if(operand[0] == '0' && operand[1] == 'x') return "hex"; // Hexidecimal.
+    if(operand.find_first_not_of("0123456789") == -1) return "dec"; // Decimal number. Convert.
 
-    cout << "\t\tImm " << arg << ": " << hex << setfill('0') << setw(8) << imm << endl;
-    return imm;
-}
+    if(operand[0] == '.') return "local"; // Starts with period means local.
+    // If it ends with either f or b, and the rest is only numbers, it's a local variable.
+    if((operand[operand.length() - 1] == 'f' || operand[operand.length() - 1] == 'b') && operand.find_first_not_of("0123456789") == (operand.length() -1)) return "local";
 
-int RType(string* args, int f7, int f3, int op) {
-    // Argument order: rd, rs1, rs2
-    int ret = 0;
-
-    ret += (f7 & 0x7f) << 25; // funct7
-    ret += (argToReg(args[2]) & 0x1f) << 20; // rs2
-    ret += (argToReg(args[1]) & 0x1f) << 15; // rs1
-    ret += (f3 & 0x7) << 12; // funct3
-    ret += (argToReg(args[0]) & 0x1f) << 7; // rd
-    ret += (op & 0x7f); // opcode
-
-    return ret;
-}
-
-int IType(string* args, int f3, int op) { // UNTESTED
-    // Argument order: rd, rs1, imm
-    int ret = 0;
-
-    ret += (argToImm(args[2]) & 0xfff) << 20;
-    ret += (argToReg(args[1]) & 0x1f) << 15; // rs1
-    ret += (f3 & 0x7) << 12; // funct3
-    ret += (argToReg(args[0]) & 0x1f) << 7; // rd
-    ret += (op & 0x7f); // opcode
-
-    return ret;
-}
-
-int SType(string* args, int f3, int op) { // UNTESTED
-    // Argument order: rs1, rs2, imm
-    int ret = 0;
-    int imm = argToImm(args[2]);
-
-    ret += ((imm >> 5) & 0x7f) << 25; // imm[11:5]
-    ret += (argToReg(args[1]) & 0x1f) << 20; // rs2
-    ret += (argToReg(args[0]) & 0x1f) << 15; // rs1
-    ret += (f3 & 0x7) << 12; // funct3
-    ret += (imm & 0x1f) << 7; // imm[4:0]
-    ret += (op & 0x7f); // opcode
-
-    return ret;
-}
-
-int BType(string* args, int f3, int op) { // UNTESTED
-    // Argument order: rs1, rs2, imm
-    int ret = 0;
-    int imm = argToImm(args[2]);
-
-    ret += ((imm >> 12) & 0x1) << 31; // imm 12
-    ret += ((imm >> 5) & 0x3f) << 25; // imm 10:5
-    ret += (argToReg(args[1]) & 0x1f) << 20; // rs2
-    ret += (argToReg(args[0]) & 0x1f) << 15; // rs1
-    ret += (f3 & 0x7) << 12; // funct3
-    ret += ((imm >> 1) & 0xf) << 8; // imm 4:1
-    ret += ((imm >> 11) & 0x1) << 7; // imm 11
-    ret += (op & 0x7f); // opcode
-
-    return ret;
-}
-
-int UType(string* args, int op) { // UNTESTED
-    // Arugment order: rd, imm
-    int ret = 0;
-
-    ret += ((argToImm(args[1]) >> 12) & 0xfffff000) << 12; // imm 31:12
-    ret += (argToReg(args[0]) & 0x1f) << 7; // rd
-    ret += (op & 0x7f); // opcode
-
-    return ret;
-}
-
-int JType(string* args, int op) { // UNTESTED
-    // Arugment order: rd, imm
-    int ret = 0;
-    int imm = argToImm(args[1]);
-
-    ret += ((imm >> 20) & 0x1) << 31; // imm 20
-    ret += ((imm >> 1) & 0x3ff) <<  21; // imm 10:1
-    ret += ((imm >> 11) & 0x1) << 20; // imm 11
-    ret += ((imm >> 12) & 0xff) << 12; // imm 19:12
-    ret += (argToReg(args[0]) & 0x1f) << 7; // rd
-    ret += (op & 0x7f); // opcode
-
-    return ret;
-
-}
-
-bool TypeTesting() {
-    string* t = new string[3];
-
-
-    // RType:
-    t[0] = "x0"; t[1] = "x0"; t[2] = "x0";
-    if(RType(t, 0, 0x7, 0) != (0x7 << 12)) cout << "\tRType funct3 error.\n";
-
-    t[0] = "x0"; t[1] = "x0"; t[2] = "x0";
-    if(RType(t, 0, 0, 0x7f) != 0x7f) cout << "\tRType opcode error.\n";
-
-
-    // IType:
-    t[0] = "x0"; t[1] = "x0"; t[2] = "0";
-    if(IType(t, 0, 0x7f) != 0x7f) cout << "\tIType opcode error.\n";
-
-    t[0] = "x0"; t[1] = "x0"; t[2] = "-1";
-    if(IType(t, 0, 0) != (0xfff << 20)) cout << "\tIType imm error.\n";
-
-
-    // SType:
-    t[0] = "x0"; t[1] = "x0"; t[2] = "0";
-    if(SType(t, 0, 0x7f) != 0x7f) cout << "\tSType opcode error.\n";
-
-    t[0] = "x0"; t[1] = "x0"; t[2] = "-1";
-    if(SType(t, 0, 0) != (0xfe000f80)) cout << "\tSType imm error.\n";
-
-
-    // Function Tests:
-
-
-    //cout << hex << setfill('0') << setw(8) << RType(t, 0, 0, 0x3f);
-    delete [] t;
-
+    return "global"; // Otherwise, it has to be a global variable.
 }
 
 int main()
 {
+    // How I think it will all work:
+    /*  Take 3:
+            First Pass:
+                text:
+                    First, trim the line of comments and leading white space.
+                    If there is no content, then skip the line.
+
+                    If it's a label:
+                        See if it's global. If it is, add it to the symbol table with pc.
+                        If it's local (only a number with colon, or starts with '.'):
+                            Make a local symbol table, which will be a vector of LocalSymbol classes.
+                                Classes will contain this data: Name and address.
+                            When you encounter a local symbol, simply add a LocalSymbol class to the end of the vector.
+                        After the above, continue as in-line labels are not to be supported yet.
+
+                    If it's not a label, it should be an instruction.
+                        Translate it into arguments properly using instToOperands().
+                        If it's no op, skip it. This is so you can reassemble the abridged output and not accumulate no ops.
+                        If it's a jump, branch, load, or store:
+// HERE                         Figure out if the immediate is a label or a number.
+                                Note that jumps, branches, loads, and stores can have their immediate in different places.
+                                Label:
+                                    If it's a backwards reference, convert it to an address.
+                                    If it's a forward reference, keep it as a label.
+                                    Add the necessary amount of no ops if it's forward.
+                                Number:
+                                    Translate it to hex if it's not, so that it can be skipped easier in the second pass.
+                                    Assume the programmer is smart enough to properly jump if it's a number, otherwise they should use a pseudo instruction.
+                        Add the instruction arguments to the text vector.
+
+                Append an infinite loop to the end of the text section.
+
+                data:
+                    Find the .data keyword.
+                    You should have the final instruction number after the text section is determined.
+                    Add data as necessary to the data vector.
+                        You'll probably want a way to store a string of data, using .string or whatever they do.
+
+            Second Pass: This really just goes back over the data stored in the vectors, so you can close the streams.
+                Just go over the entire text vector.
+                You'll output in two places: You can start by dumping the assembly as is in the text vector to the abridged assembly file.
+                    Add a comment on the end with the line number for compatibility, so it can be re-assembled.
+                Next, read through the current instruction and do a few things:
+                    If it's a jump, branch, load, or store, make sure to correct the far branches.
+                        Jumps:
+                            You have a no op after you instruction so you're going to use that now.
+                            For the current instruction, write a auipc instruction for a relative jump. (sets rd to pc + 20 bit high immediate)
+                            Then, write the old jump as the next instruction. You'll have to be sure the offset is still right!
+                            If the last bit, bit 11, is set you might do some accidental subtraction, so add one to the upper imm. to correct for this.
+                            Continue. Be sure to add 2 to the instruction counter so the no ops are skipped, though.
+                        Loads and stores are pretty much the same as jumps, but be sure you're using the right argument as the immediate!
+                        Branches:
+                            This one is a little more involved. If it's far you'll have to utilize the next two no ops.
+                            First, change your branch type to be the OPPOSITE of what it is now. I.e., ben means branch when equal, branch less than means gte.
+                            Set the offset of this new branch to 2(?) so it's just after the next two instructions.
+                            Then, place a relative or absolute jump after the branch. This path will be taken when false instead of true now and the jump will occur.
+                            Write auipc/lui as necessary as the next op.
+                            Write the next jump as necessary for the next (3rd) op.
+                            Continue, but be sure to add 3 to the instruction counter!
+
+
+    */
+
+    // Initialize Classes:
+    Translator translator;
+
+    // Data Structures for Assembly:
+    map<string, uint32_t> symbolMap;
+    vector<LocalSymbol> localSymbols;
+    vector<string*> text;
+    vector<string> data;
+
     // Settings:
     string programFile = "assembly.txt";
     string outputFile = "output.txt";
-    int instructionLength = 32;
-    int memSizeKB = 8; // Memory size in KB, will be calculated as ((2^20) * n)
-
 
     // Open the input and output files.
     ifstream prog; prog.open(programFile);
     ofstream out; out.open(outputFile);
 
-    int memSize = (2 << 10) * memSizeKB;
-    int* memory = new int[memSize];
-
-    for(int i = 0; i < memSize; i++) { // Initialize the array to zero because some junk found its way in.
-        memory[i] = 0;
-    }
-
     // Start reading in the input file.
     int lineNumber = 0;
     uint32_t hardwareInst = 0;
 
+    // First Pass:
     string inst = "";
-    string operation = "";
-    string arg[5] = {"", "", "", "", ""};
 
+    string operands[5] = {"", "", "", "", ""};
+    string nop[4] = {"addi", "x0", "x0", "0"}; // Constant
+
+    int instructionNumber = 0; // This is the effective instruction line, as it will be in the computer memory.
+    int progLine = -1; // This is the line of the program file. For debugging.
+
+
+    // First Pass:
     while(getline(prog, inst)) {
-        // Cut out any comments.
-        if(inst.find("#")) inst = inst.substr(0, inst.find("#")); // If there is a comment, remove it from the instruction.
-        if(inst.length() < 2) {lineNumber++; continue;} // If the line is just a comment, skip it.
 
-        cout << "Instruction is \"" << inst << "\"\n";
-        operation = inst.substr(0, inst.find(" ")); // The operation is always followed by a space. Look for the first and the content before it is the op.
-        cout << "\tOperation is \"" << operation << "\"\n";
+        progLine++;
+        inst = translator.stringTrimmer(inst); // Cut out the white space and comments.
+        if(inst == "") {cout << "Line " << progLine << ": Skipping comment/blank line...\n"; continue;} // The line was just a comment, skip it.
+        cout << "Line " << progLine << ": \"" << inst << "\"\n";
 
-        inst = inst.substr(inst.find(" ") + 1, inst.length());
-        cout << "\tArguments are \"" << inst << "\"" << endl; // The arguments are simply the remaining section after the op, remove the op and the space after it to find your args.
-        int numArgs = 0;
+        // Labels:
+        if(inst.find(":") != -1) {
+            inst = inst.substr(0, inst.find(":")); // Remove the ':' from the end for easier reading.
+            if(labelType(inst) == "local") {
+                cout << "\tLocal label found: \"" << inst << "\", saving as alias for " << instructionNumber << "\n\n";
 
-        while(inst.find(",") != -1) { // When a comma is found, there are still multiple arguments left. This finds them.
-            int start = 0;
-            while(start < inst.length() && inst[start] == ' ') start++; // Increment start until it is no longer a space. Used to ignore white space.
+                LocalSymbol loc;
+                loc.address = instructionNumber;
+                loc.symbol = inst;
+                localSymbols.push_back(loc);
 
-            arg[numArgs] = inst.substr(start, inst.find(",") - start); // The arguments usually end in a comma.
-            numArgs++;
-            inst = inst.substr(inst.find(",") + 2, inst.length()); // Remove the argument you just isolated. This only supports a format with ARG, ARG where a space/comma is in between the args.
+                continue;
+            } else if (labelType(inst) == "global") {
+                cout << "\tGlobal label found: \"" << inst << "\", saving as alias for " << instructionNumber << "\n\n";
+
+                symbolMap[inst] = instructionNumber;
+
+                continue;
+            }
         }
 
-        // Last piece has to be an argument.
-        if(inst.find(" ") != -1) arg[numArgs] = inst.substr(inst.find_first_not_of(" "), inst.find_last_not_of(" ") - inst.find_first_not_of(" ") + 1);
-        else arg[numArgs] = inst;
+        // Instructions:
+        translator.instrToOperands(inst, operands); // Turn into arguments format.
 
-        if(arg[numArgs].find("(") != -1 && arg[numArgs].find(")") != -1) {
-            string s = arg[numArgs];
-
-            arg[numArgs] = s.substr(s.find("(") + 1, s.find(")") - s.find("(") - 1); // rs1
-            arg[numArgs + 1] = s.substr(0, s.find("(")); // imm
-
-            numArgs++;
-        } else if((arg[numArgs].find("(") == -1 && arg[numArgs].find(")") != -1) || (arg[numArgs].find("(") != -1 && arg[numArgs].find(")") == -1)) {
-            cout << "Missing a parenthesis: " << arg[numArgs];
+        int matches = 0;
+        for(int i = 0; i < 4; i++) { // Make sure it's not a no op. If it is, skip it.
+            if(operands[i] == nop[i]) matches++;
         }
-
-        numArgs++;
-
-        for(int i = 0; i < numArgs; i++) { // Print out arguments for debugging.
-            cout << "\t\tArgument " << i << " is \"" << arg[i] << "\"" << endl;
-        }
-
-        // The main "switch" statement made of conditionals since strings aren't supported. Starts with RV32I instructions.
-        for(int i = 0; i < operation.length(); i++) { // Convert the operation string to lowercase.
-            operation[i] = tolower(operation[i]);
+        if(matches == 4) {
+            cout << "\tNo op, skipping...\n";
+            continue;
         }
 
 
+        string op = operands[0];
+        if(op == "jal") {
+            // Argument 2 will be the immediate for jal.
 
+            string type = immType(operands[2]);
 
-        // RV 32I Instructions:
-               if(operation == "lui") {
-            hardwareInst = UType(arg, 0x37);
-        } else if(operation == "auipc") {
-            hardwareInst = UType(arg, 0x17);
-        } else if(operation == "jal") {
-            hardwareInst = JType(arg, 0x6f);
-        } else if(operation == "jalr") {
-            hardwareInst = IType(arg, 0x0, 0x67);
-        } else if(operation == "beq") {
-            hardwareInst = BType(arg, 0x0, 0x63);
-        } else if(operation == "bne") {
-            hardwareInst = BType(arg, 0x1, 0x63);
-        } else if(operation == "blt") {
-            hardwareInst = BType(arg, 0x4, 0x63);
-        } else if(operation == "bge") {
-            hardwareInst = BType(arg, 0x5, 0x63);
-        } else if(operation == "bltu") {
-            hardwareInst = BType(arg, 0x6, 0x63);
-        } else if(operation == "bgeu") {
-            hardwareInst = BType(arg, 0x7, 0x63);
-        } else if(operation == "lb") {
-            hardwareInst = IType(arg, 0x0, 0x03);
-        } else if(operation == "lh") {
-            hardwareInst = IType(arg, 0x1, 0x03);
-        } else if(operation == "lw") { // Think this is for all load and store: format is lw rd, 0x#(rs1) where 0x# is an added offset to rs1. Offset = imm.
-            hardwareInst = IType(arg, 0x2, 0x03);
-        } else if(operation == "lbu") {
-            hardwareInst = IType(arg, 0x4, 0x03);
-        } else if(operation == "lhu") {
-            hardwareInst = IType(arg, 0x5, 0x03);
-        } else if(operation == "sb") {
-            hardwareInst = SType(arg, 0x0, 0x23);
-        } else if(operation == "sh") {
-            hardwareInst = SType(arg, 0x1, 0x23);
-        } else if(operation == "sw") {
-            hardwareInst = SType(arg, 0x2, 0x23);
-        } else if(operation == "addi") {
-            hardwareInst = IType(arg, 0x0, 0x13);
-        } else if(operation == "slti") {
-            hardwareInst = IType(arg, 0x3, 0x13);
-        } else if(operation == "sltiu") {
-            hardwareInst = IType(arg, 0x3, 0x13);
-        } else if(operation == "xori") {
-            hardwareInst = IType(arg, 0x4, 0x13);
-        } else if(operation == "ori") {
-            hardwareInst = IType(arg, 0x6, 0x13);
-        } else if(operation == "andi") {
-            hardwareInst = IType(arg, 0x7, 0x13);
-        } else if(operation == "slli") { // NEED A SPECIAL IMM FOR SHAMT
-            hardwareInst = IType(arg, 0x1, 0x13);
-            hardwareInst = (hardwareInst << 7) >> 7;
-        } else if(operation == "srli") { // NEED A SPECIAL IMM FOR SHAMT
-            hardwareInst = IType(arg, 0x5, 0x13);
-            hardwareInst = (hardwareInst << 7) >> 7;
-        } else if(operation == "srai") { // NEED A SPECIAL IMM FOR SHAMT
-            hardwareInst = IType(arg, 0x5, 0x13);
-            hardwareInst = (hardwareInst << 7) >> 7;
-            hardwareInst += 0x40000000;
-        } else if(operation == "add") {
-            hardwareInst = RType(arg, 0x0, 0x0, 0x33);
-        } else if(operation == "sub") {
-            hardwareInst = RType(arg, 0x2, 0x0, 0x33);
-        } else if(operation == "sll") {
-            hardwareInst = RType(arg, 0x0, 0x1, 0x33);
-        } else if(operation == "slt") {
-            hardwareInst = RType(arg, 0x0, 0x2, 0x33);
-        } else if(operation == "sltu") {
-            hardwareInst = RType(arg, 0x0, 0x3, 0x33);
-        } else if(operation == "xor") {
-            hardwareInst = RType(arg, 0x0, 0x4, 0x33);
-        } else if(operation == "srl") {
-            hardwareInst = RType(arg, 0x0, 0x5, 0x33);
-        } else if(operation == "sra") {
-            hardwareInst = RType(arg, 0x2, 0x5, 0x33);
-        } else if(operation == "or") {
-            hardwareInst = RType(arg, 0x0, 0x6, 0x33);
-        } else if(operation == "and") {
-            hardwareInst = RType(arg, 0x0, 0x7, 0x33);
-        } else if(operation == "fence") {
-            //hardwareInst = IType();
-        } else if(operation == "ecall") { // Hard coded instruction.
-            hardwareInst = 0x00000073;
-        } else if(operation == "ebreak") { // Hard coded instruction.
-            hardwareInst = 0x00100073;
+            if(type == "hex" || type == "dec") {
+
+            } else if(type == "local") {
+                if(operands[2][operands[2].length() - 1] == 'f') { // Forward .f reference.
+                    // Basically do nothing, pass 2 will resolve this...
+                    test.push_back(operands);
+                    text.push_back(nop);
+                    continue;
+                } else { // Means it's either a # or .f label, both will be treated the same way.
+                    // You'll search your backlog of local labels to hopefully find it.
+                    // If not, it's probably a forward ref that you haven't encountered yet, so fix in pass 2.
+                    int index = -1;
+                    for(int i = localSymbols.size(); i >= 0; i--) { // Go through the local symbols backwards, since local are overwritten.
+                        if(localSymbols[i].symbol == operands[2]) {
+                            operands[2] = localSymbols[i].address;
+                            index = i;
+                            break;
+                        }
+                    }
+
+                    if(index != -1) { // Found the label in the above loop. No need for no ops.
+                        text.push_back(operands);
+                        continue;
+                    } else { // Haven't found the label yet, will resolve in pass 2.
+                        test.push_back(operands);
+                        text.push_back(nop);
+                        continue;
+                    }
+
+                }
+
+            } else if(type == "global") {
+                if(symbolMap.find(operands[2]) != symbolMap.end()) { // If the global label is already defined, replace it. You won't have to push no ops.
+                    operands[2] = symbolMap[operands[2]];
+                } else {
+                    text.push_back(operands);
+                    text.push_back(nop);
+                    continue;
+                }
+            }
+
+        } else if(op == "jalr" ||
+                  op == "beq" ||
+                  op == "bne" ||
+                  op == "blt" ||
+                  op == "bge" ||
+                  op == "bltu" ||
+                  op == "bgeu" ||
+                  op == "lb" ||
+                  op == "lh" ||
+                  op == "lw" ||
+                  op == "lbu" ||
+                  op == "lhu" ||
+                  op == "sb" ||
+                  op == "sh" ||
+                  op == "sw") {
+            // For these, the immediate will be argument 3.
         }
 
-        cout << "\n\tHardware Instruction: " << hex << setfill('0') << setw(8) << hardwareInst;
 
-        // Prepare for next cycle.
-        lineNumber++;
-        hardwareInst = 0;
-
-        cout << "\n\n";
     }
 
-
-    // Write everything to the output file.
-    for(int i = 0; i < memSize; i++) {
-        out << hex << setfill('0') << setw(instructionLength / 4) << memory[i] << endl;
-    } cout << "Finished writing to the program file.\n";
+    // Second Pass:
 
     // Close all of the files.
     prog.close();
     out.close();
 
-    // Purge all of the arrays.
-    delete [] memory;
-    memory = nullptr;
-
-    TypeTesting();
+    //TypeTesting();
 
     return 0;
 }
+
+/* Old comments.
+
+        There will have to be a linked list of strings.
+
+        The assembler will work in one pass of the file, but it will go over it again in memory.
+
+        Operation :
+            You'll go through and do this after trimming comments and leading whitespace:
+                text:
+                    You'll execute directives as you encounter them.
+                    Add valid instructions to an instruction vector.
+                    And add labels to a symbol table/map.
+                    If you find a forward reference, just add it to the symbol table and add no ops accordingly after it.
+
+                data:
+                    You'll need another vector for data.
+                    Simply read it in during the first pass.
+
+            Next, you'll go through your instruction vector and replace all of your labels with proper addresses.
+                text:
+                    You'll start by replacing any labels with the correct offset based on the symbol table.
+                    You may need to replace single command jumps with two or more instructions, just replace the no ops you made earlier.
+
+                data:
+                    You'll offset all of the data addresses by the length of the text vector.
+
+            Finally, you'll output the machine language vector to the output file.
+
+
+            Operation Take 2: Done Quickly
+            First Pass:
+                text:
+                    Execute any directives as you encounter them.
+                    Make a symbol table as you go.
+                    Backwards references can be resolved as they occur, there is no need to insert no ops.
+                    Any forward references should be padded with no ops:
+                        Add a no op after any unconditional jumps.
+                        Add two no ops after conditional branches.
+                        Add a no op after any load/store operations.
+                    Resolve any backwards references as they occur, no ops are NOT needed.
+
+                data:
+                    Set up with addresses that occur directly after the text segment.
+
+            Second Pass:
+                text:
+                    This will purely be a pass of the instruction vector.
+                    Resolve forward references with the symbol table.
+                        Far jump? Delete the no op after the jump, and add a LUI before it, loading the top 20 bits into the imm.
+                            IF BIT 11 (LAST) OF IMM IS 1, ADD ONE TO THE LUI IMMEDIATE TO COMPENSATE FOR SUBTRACTION.
+                        Far branch? Turn into branch to opposite branch type with offset of three, then lui and jump.
+                            This will make you branch OVER the jump if you previously DIDN'T want to jump, and if you do jump still, you'll no go on to the lui jump.
+                        Far load/store? Add in a lui before it (current inst. number), then place your corrected load/store.
+
+                    Translate all instructions in place while you do the above.
+                    End the program with an infinite loop of jump -1 so data is not operated as instructions.
+
+                data:
+                    After you finish the text, just slap the data on the end. */

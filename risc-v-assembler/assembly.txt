@@ -1,4 +1,9 @@
-add t0, t1, t2
-slti t3, t2, 0xffffffff #comment
-slt     t4,   t0,      t1#comment
-lw t0, 0x43(t1)
+	add t0, t1, t2 # ML: 0000000_00111_00110_000_00101_0110011 = 007302b3
+     	slti t3, t2, 0xffffffff # ML: fff_00111_010_11100_0010011 = fff3ae13
+	slt t4, t0, t1 # ML: 0000000_00110_00101_010_11101_0110011 = 0062aeb3
+	lw t0, 0x43(t1) # ML: 0000:0100:0011_00110_010_00101_0000011 = 04332283
+		  #testCommentWithSpaces
+.local:
+1:
+
+global:
